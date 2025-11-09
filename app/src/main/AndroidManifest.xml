@@ -4,9 +4,8 @@
 
     <!-- Queries for package visibility -->
     <queries>
-        <!-- Allow app visibility for these packages -->
         <package android:name="com.google.android.apps.maps" />
-        <package android:name="com.facebook.orca" /> <!-- Messenger -->
+        <package android:name="com.facebook.orca" />
         <package android:name="com.whatsapp" />
         <package android:name="org.telegram.messenger" />
         <intent>
@@ -19,15 +18,20 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Bluetooth (Android 12+) -->
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <uses-permission
-        android:name="android.permission.BLUETOOTH_ADVERTISE"
+    <!-- Bluetooth and related permissions -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"
         tools:ignore="BluetoothPermission" />
-
-    <!-- Location required for BLE discovery on Android 11 and below -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission
+        android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+        tools:ignore="ProtectedPermissions" />
 
     <application
         android:allowBackup="true"
@@ -38,13 +42,34 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.LumaNotifier">
-        
+
+        <!-- Bluetooth service -->
         <service
             android:name=".BluetoothService"
+            android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice|dataSync" />
+            android:foregroundServiceType="connectedDevice" />
 
-        <!-- Main screen -->
+        <!-- Notification forwarder service -->
+        <service
+            android:name=".NotificationForwarderService"
+            android:label="Luma Notification Forwarder"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+
+            <!-- optional fine control -->
+            <meta-data
+                android:name="android.service.notification.default_filter_types"
+                android:value="conversations|alerting" />
+            <meta-data
+                android:name="android.service.notification.disabled_filter_types"
+                android:value="ongoing|silent" />
+        </service>
+
+        <!-- Activities -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -54,32 +79,10 @@
             </intent-filter>
         </activity>
 
-        <!-- App selection screen -->
         <activity
             android:name=".AppSelectionActivity"
             android:exported="false"
             android:label="Select Apps" />
-
-        <!-- Notification listener -->
-        <service
-            android:name=".NotificationForwarderService"
-            android:label="Luma Notification Forwarder"
-            android:exported="true"
-            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
-
-            <intent-filter>
-                <action android:name="android.service.notification.NotificationListenerService" />
-            </intent-filter>
-
-            <meta-data
-                android:name="android.service.notification.default_filter_types"
-                android:value="conversations|alerting" />
-
-            <meta-data
-                android:name="android.service.notification.disabled_filter_types"
-                android:value="ongoing|silent" />
-        </service>
-
 
     </application>
 </manifest>

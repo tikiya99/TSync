@@ -1,4 +1,5 @@
 package com.example.lumanotifier
+import com.example.lumanotifier.databinding.ActivityMainBinding
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -13,10 +14,15 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.color.DynamicColors
+import android.provider.Settings
+import android.content.ComponentName
+import android.app.AlertDialog
+import android.service.notification.NotificationListenerService
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var deviceSpinner: Spinner
+    private lateinit var binding: ActivityMainBinding
     private lateinit var connectButton: Button
     private lateinit var sendButton: Button
     private lateinit var selectAppsButton: Button
@@ -30,20 +36,21 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         DynamicColors.applyToActivityIfAvailable(this)
-        setContentView(R.layout.activity_main)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
-        findViewById<MaterialToolbar>(R.id.topAppBar).setNavigationOnClickListener {
+        binding.topAppBar.setNavigationOnClickListener {
             Toast.makeText(this, "Connected to Luma", Toast.LENGTH_SHORT).show()
         }
 
-        deviceSpinner = findViewById(R.id.deviceSpinner)
-        connectButton = findViewById(R.id.connectButton)
-        sendButton = findViewById(R.id.sendButton)
-        selectAppsButton = findViewById(R.id.selectAppsButton)
-        inputField = findViewById(R.id.inputField)
-        logView = findViewById(R.id.logView)
+        val deviceSpinner = binding.deviceSpinner
+        val connectButton = binding.connectButton
+        val sendButton = binding.sendButton
+        val selectAppsButton = binding.selectAppsButton
+        val inputField = binding.inputField
+        val logView = binding.logView
 
-        // Check Bluetooth availability
+        // Check Bluetooth support
         if (bluetoothAdapter == null) {
             logView.text = "Bluetooth not supported on this device"
             return
@@ -60,6 +67,31 @@ class MainActivity : AppCompatActivity() {
                 ),
                 100
             )
+        } else {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(
+                    Manifest.permission.BLUETOOTH,
+                    Manifest.permission.BLUETOOTH_ADMIN,
+                    Manifest.permission.ACCESS_FINE_LOCATION
+                ),
+                100
+            )
+        }
+
+        // Ask user to grant access if not enabled
+        val cn = ComponentName(this, NotificationForwarderService::class.java)
+        val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+
+        if (flat == null || !flat.contains(cn.flattenToString())) {
+            AlertDialog.Builder(this)
+                .setTitle("Notification Access")
+                .setMessage("Please enable notification access for Luma Notifier to forward app notifications.")
+                .setPositiveButton("Grant Access") { _, _ ->
+                    startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
 
         // Populate paired devices
@@ -76,7 +108,7 @@ class MainActivity : AppCompatActivity() {
                 position: Int,
                 id: Long
             ) {
-                if (pairedDevices != null && pairedDevices.isNotEmpty()) {
+                if (!pairedDevices.isNullOrEmpty()) {
                     selectedDevice = pairedDevices.elementAt(position)
                     logView.text = "Selected: ${selectedDevice?.name}\n"
                 }
@@ -85,34 +117,51 @@ class MainActivity : AppCompatActivity() {
             override fun onNothingSelected(parent: AdapterView<*>) {}
         }
 
-        // Open app selection
+        // Open app selection screen
         selectAppsButton.setOnClickListener {
             startActivity(Intent(this, AppSelectionActivity::class.java))
         }
 
-        // Connect and start background service
+        // Connect and start Bluetooth service
         connectButton.setOnClickListener {
             if (selectedDevice == null) {
                 logView.append("No device selected\n")
                 return@setOnClickListener
             }
 
-            val intent = Intent(this, BluetoothService::class.java)
-            intent.putExtra("device_address", selectedDevice!!.address)
-            startForegroundService(intent)
-            logView.append("Started background service for ${selectedDevice!!.name}\n")
+            val address = selectedDevice!!.address
+            logView.append("Connecting to ${selectedDevice!!.name}...\n")
+
+            BluetoothHelper.connect(
+                address,
+                onSuccess = {
+                    runOnUiThread { logView.append("Connected to ${selectedDevice!!.name}\n") }
+                },
+                onError = { msg ->
+                    runOnUiThread { logView.append("$msg\n") }
+                }
+            )
         }
 
-        // Manual message sending
+        // Manual test message sender
         sendButton.setOnClickListener {
-            val msg = inputField.text.toString()
+            val msg = inputField.text.toString().trim()
             if (msg.isNotEmpty()) {
-                BluetoothLink.send?.invoke(msg)
-                logView.append("Sent: $msg\n")
-                inputField.text.clear()
+                try {
+                    BluetoothLink.send?.invoke(msg)
+                    logView.append("Sent: $msg\n")
+                    inputField.text.clear()
+                } catch (e: Exception) {
+                    logView.append("Send failed: ${e.message}\n")
+                }
             } else {
-                logView.append("No device connected\n")
+                logView.append("No message entered\n")
             }
         }
+    }
+
+    override fun onDestroy() {
+            super.onDestroy()
+            BluetoothHelper.disconnect()
     }
 }

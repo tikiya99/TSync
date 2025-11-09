@@ -11,37 +11,51 @@ object BluetoothLink {
 
 class NotificationForwarderService : NotificationListenerService() {
 
+    private val tag = "Notifier"
+
     override fun onListenerConnected() {
-        Log.d("Notifier", "Notification listener connected.")
+        Log.d(tag, "Notification listener connected.")
         super.onListenerConnected()
     }
 
     override fun onListenerDisconnected() {
-        Log.w("Notifier", "Listener disconnected. Requesting rebind.")
-        requestRebind(ComponentName(this, NotificationForwarderService::class.java))
+        Log.w(tag, "Listener disconnected. Scheduling rebind.")
+        try {
+            requestRebind(ComponentName(this, NotificationForwarderService::class.java))
+        } catch (e: Exception) {
+            Log.e(tag, "Rebind failed", e)
+        }
         super.onListenerDisconnected()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        val pkg = sbn.packageName
-        val prefs = getSharedPreferences("prefs", MODE_PRIVATE)
-        val allowed = prefs.getStringSet("allowed_apps", emptySet()) ?: emptySet()
-        if (!allowed.contains(pkg)) return
+        try {
+            val pkg = sbn.packageName
 
-        val extras = sbn.notification.extras
-        val title = extras.getString("android.title") ?: ""
-        val text = extras.getCharSequence("android.text")?.toString() ?: ""
-        val lines = extras.getCharSequenceArray("android.textLines")
+            // Filter by user-selected apps
+            val prefs = getSharedPreferences("prefs", MODE_PRIVATE)
+            val allowed = prefs.getStringSet("allowed_apps", emptySet()) ?: emptySet()
+            if (allowed.isNotEmpty() && !allowed.contains(pkg)) return
 
-        val fullText = when {
-            lines != null -> lines.joinToString("\n") { it.toString() }
-            text.isNotEmpty() -> text
-            else -> "(no text)"
+            // Extract notification content
+            val extras = sbn.notification.extras
+            val title = extras.getString("android.title") ?: "(no title)"
+            val text = extras.getCharSequence("android.text")?.toString() ?: ""
+            val lines = extras.getCharSequenceArray("android.textLines")
+
+            val fullText = when {
+                lines != null && lines.isNotEmpty() -> lines.joinToString("\n") { it.toString() }
+                text.isNotEmpty() -> text
+                else -> "(no text)"
+            }
+
+            // Format and send
+            val msg = "[$pkg]\n$title\n$fullText"
+            Log.d(tag, "Forwarding: $msg")
+
+            BluetoothLink.send?.invoke(msg)
+        } catch (e: Exception) {
+            Log.e(tag, "Error handling notification", e)
         }
-
-        val msg = "$pkg: $title - $fullText"
-        Log.d("Notifier", msg)
-
-        BluetoothLink.send?.invoke(msg)
     }
 }
